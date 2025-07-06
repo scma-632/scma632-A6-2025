@@ -1,136 +1,135 @@
-# Set the working directory and verify it
-setwd('E:\\Assignments_SCMA632\\Data')
-getwd()
-#install.packages(dplyr)
-# Function to install and load libraries
-install_and_load <- function(package) {
-  if (!require(package, character.only = TRUE)) {
-    install.packages(package, dependencies = TRUE)
-    library(package, character.only = TRUE)
-  }
-}
+#-------------------------------#
+# Step 1: Load and inspect data ----
+#-------------------------------#
 
-# Load required libraries
-libraries <- c("dplyr", "readr", "readxl", "tidyr", "ggplot2", "BSDA")
-lapply(libraries, install_and_load)
+# Set working directory to the location of your dataset
+setwd('D:\\Teaching\\SCMA632 2025 C51\\Assignments\\Data')
 
-# Reading the file into R
-data <- read.csv("NSSO68.csv")
+# Read the NSSO68 dataset
+df <- read.csv('NSSO68.csv')
 
-# Filtering for AP
-df <- data %>%
-  filter(state_1 == "AP")
+# Inspect column names
+names(df)
 
-# Display dataset info
-cat("Dataset Information:\n")
-print(names(df))
-print(head(df))
-print(dim(df))
-
-# Finding missing values
-missing_info <- colSums(is.na(df))
-cat("Missing Values Information:\n")
-print(missing_info)
-
-# Subsetting the data
-apnew <- df %>%
-  select(state_1, District, Region, Sector, State_Region, Meals_At_Home, ricepds_v, Wheatpds_q, chicken_q, pulsep_q, wheatos_q, No_of_Meals_per_day)
-
-# Impute missing values with mean for specific columns
-impute_with_mean <- function(column) {
-  if (any(is.na(column))) {
-    column[is.na(column)] <- mean(column, na.rm = TRUE)
-  }
-  return(column)
-}
-apnew$Meals_At_Home <- impute_with_mean(apnew$Meals_At_Home)
-
-# Finding outliers and removing them
-remove_outliers <- function(df, column_name) {
-  Q1 <- quantile(df[[column_name]], 0.25)
-  Q3 <- quantile(df[[column_name]], 0.75)
-  IQR <- Q3 - Q1
-  lower_threshold <- Q1 - (1.5 * IQR)
-  upper_threshold <- Q3 + (1.5 * IQR)
-  df <- subset(df, df[[column_name]] >= lower_threshold & df[[column_name]] <= upper_threshold)
-  return(df)
-}
-
-outlier_columns <- c("ricepds_v", "chicken_q")
-for (col in outlier_columns) {
-  apnew <- remove_outliers(apnew, col)
-}
-
-# Summarize consumption
-apnew$total_consumption <- rowSums(apnew[, c("ricepds_v", "Wheatpds_q", "chicken_q", "pulsep_q", "wheatos_q")], na.rm = TRUE)
-
-# Summarize and display top consuming districts and regions
-summarize_consumption <- function(group_col) {
-  summary <- apnew %>%
-    group_by(across(all_of(group_col))) %>%
-    summarise(total = sum(total_consumption)) %>%
-    arrange(desc(total))
-  return(summary)
-}
-
-district_summary <- summarize_consumption("District")
-region_summary <- summarize_consumption("Region")
-
-cat("Top Consuming Districts:\n")
-print(head(district_summary, 4))
-cat("Region Consumption Summary:\n")
-print(region_summary)
-
-# Rename districts and sectors
-district_mapping <- c("1" = "North West","2" = "North","3" = "North East","4" = "East","5" = "New Delhi","6" = "Central Delhi","7" = "West","8" = "South West","9" = "South")
-sector_mapping <- c("2" = "URBAN", "1" = "RURAL")
-
-apnew$District <- as.character(apnew$District)
-apnew$Sector <- as.character(apnew$Sector)
-apnew$District <- ifelse(apnew$District %in% names(district_mapping), district_mapping[apnew$District], apnew$District)
-apnew$Sector <- ifelse(apnew$Sector %in% names(sector_mapping), sector_mapping[apnew$Sector], apnew$Sector)
-
-View(apnew)
-
-hist(apnew$total_consumption, breaks = 10, col = 'blue', border = 'black', 
-     xlab = "Consumption", ylab = "Frequency", main = "Consumption Distribution in Karnatka State")
-
-AP_consumption <- aggregate(total_consumption ~ District, data = apnew, sum) 
-View(AP_consumption)
-??barplot
-barplot(AP_consumption$total_consumption, 
-        names.arg = AP_consumption$District, 
-        las = 2, # Makes the district names vertical
-        col = 'blue', 
-        border = 'black', 
-        xlab = "District", 
-        ylab = "Total Consumption", 
-        main = "Total Consumption per District",
-        cex.names = 0.7) # Adjust the size of district names if needed
+# Check the 'foodtotal_v' column
+head(df$foodtotal_v)
 
 
-# b) Plot {'any variable of your choice'} on the Karnataka state map using NSSO68.csv data
+#----------------------------------------#
+# Step 2: Filter the data for Karnataka ----
+#----------------------------------------#
+
+# Check how many Karnataka rows are there
+sum(df$state_1 == 'KA')
+
+# Filter rows where state_1 is 'KA'
+ka <- df[df$state_1 == 'KA', ]
+dim(ka)
+
+# Histogram of food consumption in Karnataka
+hist(ka$foodtotal_v, 
+     main = "Distribution of Food Consumption in Karnataka",
+     xlab = "Food Consumption (foodtotal_v)", 
+     col = "lightblue", 
+     border = "white")
+
+
+#----------------------------------------------#
+# Step 3: Group-wise summary at District level ----
+#----------------------------------------------#
+
+# Convert District column to factor (if not already)
+ka$District <- as.factor(ka$District)
+
+# Load dplyr for grouping
+library(dplyr)
+
+# Add district-wise average food consumption column
+ka <- ka %>%
+  group_by(District) %>%
+  mutate(DWCons = mean(foodtotal_v, na.rm = TRUE)) %>%
+  ungroup()
+
+
+#--------------------------------------------------------#
+# Step 4: Create mapping of District Codes to Names ----
+#--------------------------------------------------------#
+
+district_map <- data.frame(
+  DistrictCode = sprintf("%02d", 1:29),  # Format as 01, 02, ..., 29
+  DistrictName = c("Belgaum", "Bagalkot", "Bijapur", "Gulbarga", "Bidar", "Raichur", "Koppal",
+                   "Gadag", "Dharwad", "Uttara Kannada", "Haveri", "Bellary", "Chitradurga",
+                   "Davanagere", "Shimoga", "Udupi", "Chikmagalur", "Tumkur", "Kolar", 
+                   "Bangalore", "Bangalore Rural", "Mandya", "Hassan", "Dakshina Kannada",
+                   "Kodagu", "Mysore", "Chamarajanagar", "Ramanagar", "Chikkaballapura"),
+  stringsAsFactors = FALSE
+)
+
+
+#---------------------------------------------------------#
+# Step 5: Merge mapping into main data using District code ----
+#---------------------------------------------------------#
+
+# Create a DistrictCode column from District number
+ka <- ka %>%
+  mutate(DistrictCode = sprintf("%02d", as.numeric(District)))  # Converts 1 to '01', etc.
+
+# Merge to get District names
+ka <- ka %>%
+  left_join(district_map, by = "DistrictCode")
+
+
+#------------------------------------------------#
+# Step 6: Summarize and Plot Bar Chart ----
+#------------------------------------------------#
+
+# Create summary table: average food consumption by district
+district_avg <- ka %>%
+  group_by(DistrictName) %>%
+  summarise(avg_food = mean(foodtotal_v, na.rm = TRUE)) %>%
+  arrange(desc(avg_food))  # Sort by consumption
+
+# Barplot: average food consumption by district
+barplot(height = district_avg$avg_food,
+        names.arg = district_avg$DistrictName,
+        las = 2,                 # Rotate x-axis labels vertically
+        col = "skyblue",        
+        main = "Average Food Consumption by District (Karnataka)",
+        ylab = "Avgerage Food Consumption (Rs.)",
+        cex.names = 0.7)        # Adjust label size if too crowded
+
+
+# Choropleth Maps
+# Plot data on the map itself
+
+# a variable of our choice
+# geojson file or the shapefile 
 
 library(ggplot2) 
 library(sf) # mapping
 library(dplyr) 
-Sys.setenv("SHAPE_RESTORE_SHX" = "YES") 
 
-data_map <- st_read("C:\\Users\\Patil\\Downloads\\ANDHRA PRADESH_DISTRICTS.geojson") 
+#Sys.setenv("SHAPE_RESTORE_SHX" = "YES")
+
+data_map <- st_read("KARNATAKA_DISTRICTS.geojson") 
 View(data_map)
 
-data_map <- data_map %>% 
-  rename(District = dtname) 
-colnames(data_map) 
-data_map_data <- merge(AP_consumption,data_map,by = "District") 
-View(data_map_data)
-ggplot(data_map_data) + 
-  geom_sf(aes(fill =total_consumption, geometry = geometry)) + 
-  scale_fill_gradient(low = "yellow", high = "red") + 
-  ggtitle("Total Consumption_by_District") 
 
+# Step 1: Ensure district name column matches in both datasets
+data_map <- data_map %>%
+  rename(DistrictName = dtname)  # Rename if needed
+
+# Step 2: Left join spatial data with data values
+data_map_data <- data_map %>%
+  left_join(district_avg, by = "DistrictName")  # Keeps all districts
+
+# Step 3: Replace NA with 0 for missing data
+data_map_data$avg_food[is.na(data_map_data$avg_food)] <- 0
+
+# Step 4: Plot using ggplot2
 ggplot(data_map_data) + 
-  geom_sf(aes(fill = total_consumption, geometry = geometry)) + 
+  geom_sf(aes(fill = avg_food, geometry = geometry)) + 
   scale_fill_gradient(low = "yellow", high = "red") + 
-  ggtitle("Total Consumption by District") +
-  geom_sf_text(aes(label = District, geometry = geometry), size = 3, color = "black")
+  ggtitle("Average Food Consumption by District") +
+  theme_minimal() +
+  geom_sf_text(aes(label = DistrictName), size = 3, color = "black")
